@@ -172,7 +172,6 @@ tr.detail td { background: var(--surface-2); }
 </head>
 <body>
 
-
 <div class="app">
   <header class="top">
     <div>
@@ -261,6 +260,8 @@ tr.detail td { background: var(--surface-2); }
           <option value="saham">Saham (IDX)</option>
           <option value="kripto">Kripto</option>
           <option value="forex">Forex</option>
+          <option value="emas">Emas (XAU)</option>
+          <option value="perak">Perak (XAG)</option>
           <option value="kontrak">Futures / CFD</option>
         </select>
       </div>
@@ -274,6 +275,7 @@ tr.detail td { background: var(--surface-2); }
       <div class="field"><label for="f-exit">Harga keluar</label><input id="f-exit" type="number" min="0" step="any" inputmode="decimal"><span class="hint">Kosongkan jika posisi masih terbuka.</span></div>
       <div class="field"><label for="f-qty" id="lbl-qty">Jumlah (lot)</label><input id="f-qty" type="number" min="0" step="any" inputmode="decimal"><span class="hint" id="hint-qty"></span></div>
       <div class="field"><label for="f-fee">Biaya (komisi + pajak)</label><input id="f-fee" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div>
+      <div class="field"><label for="f-mult">Ukuran kontrak</label><input id="f-mult" type="number" min="0" step="any" inputmode="decimal"><span class="hint">Kosongkan untuk memakai bawaan jenis aset.</span></div>
       <div class="field"><label for="f-sl">Stop loss</label><input id="f-sl" type="number" min="0" step="any" inputmode="decimal"></div>
       <div class="field"><label for="f-tp">Target</label><input id="f-tp" type="number" min="0" step="any" inputmode="decimal"></div>
       <div class="field"><label for="f-setup">Strategi</label><input id="f-setup" type="text" list="setups" maxlength="40" autocomplete="off" placeholder="Breakout, Pullback MA20"><datalist id="setups"></datalist></div>
@@ -311,7 +313,9 @@ tr.detail td { background: var(--surface-2); }
   var ASSETS = {
     saham: { label: 'Saham', unit: 'Lot', mult: 100, hint: '1 lot = 100 lembar' },
     kripto: { label: 'Kripto', unit: 'Unit', mult: 1, hint: 'Jumlah koin' },
-    forex: { label: 'Forex', unit: 'Lot', mult: 100000, hint: '1 lot standar = 100.000 unit mata uang dasar' },
+    forex: { label: 'Forex', unit: 'Lot', mult: 100000, hint: '1 lot standar = 100.000 unit. P/L dalam mata uang kuotasi (USD untuk EURUSD).' },
+    emas: { label: 'Emas (XAU)', unit: 'Lot', mult: 100, hint: '1 lot = 100 oz, jadi 0,01 lot = 1 oz. P/L dalam USD.' },
+    perak: { label: 'Perak (XAG)', unit: 'Lot', mult: 5000, hint: '1 lot = 5.000 oz. P/L dalam USD.' },
     kontrak: { label: 'Futures / CFD', unit: 'Kontrak', mult: 1, hint: 'P/L = selisih harga × jumlah' }
   };
   var DEFAULT_SETTINGS = { start: 50000000, currency: 'IDR' };
@@ -370,10 +374,11 @@ tr.detail td { background: var(--surface-2); }
     var a = ASSETS[t.asset] || ASSETS.saham;
     var dir = t.side === 'short' ? -1 : 1;
     var qty = +t.qty || 0;
+    var mult = t.mult > 0 ? +t.mult : a.mult;
     var hasExit = t.exit != null && t.exit !== '' && isFinite(+t.exit);
-    var out = { open: !hasExit, pnl: null, r: null, risk: 0, mult: a.mult };
-    if (hasExit) out.pnl = (t.exit - t.entry) * dir * qty * a.mult - (+t.fee || 0);
-    if (t.sl != null && t.sl !== '' && isFinite(+t.sl)) out.risk = Math.abs(t.entry - t.sl) * qty * a.mult;
+    var out = { open: !hasExit, pnl: null, r: null, risk: 0, mult: mult };
+    if (hasExit) out.pnl = (t.exit - t.entry) * dir * qty * mult - (+t.fee || 0);
+    if (t.sl != null && t.sl !== '' && isFinite(+t.sl)) out.risk = Math.abs(t.entry - t.sl) * qty * mult;
     if (hasExit && out.risk > 0) out.r = out.pnl / out.risk;
     return out;
   }
@@ -644,6 +649,7 @@ tr.detail td { background: var(--surface-2); }
           '<span>Stop loss <b>' + (t.sl != null ? nfPx.format(t.sl) : '—') + '</b></span>' +
           '<span>Target <b>' + (t.tp != null ? nfPx.format(t.tp) : '—') + '</b></span>' +
           '<span>Biaya <b>' + money(+t.fee || 0) + '</b></span>' +
+          '<span>Kontrak <b>' + nfPx.format(t.mult) + '</b></span>' +
           '<span>Risiko <b>' + (t.risk > 0 ? money(t.risk) : '—') + '</b></span></div>' +
           (t.notes ? '<p class="detail-note">' + esc(t.notes) + '</p>' : '<p class="detail-note" style="color:var(--muted)">Tidak ada catatan.</p>') + '</td></tr>';
       }
@@ -773,6 +779,7 @@ tr.detail td { background: var(--surface-2); }
     var a = ASSETS[$('#f-asset').value] || ASSETS.saham;
     $('#lbl-qty').textContent = 'Jumlah (' + a.unit.toLowerCase() + ')';
     $('#hint-qty').textContent = a.hint;
+    $('#f-mult').placeholder = nf0.format(a.mult);
   }
   function readForm() {
     var g = function (id) { return $('#' + id).value; };
@@ -781,7 +788,7 @@ tr.detail td { background: var(--surface-2); }
       date: g('f-date'), symbol: g('f-symbol').trim().toUpperCase(), asset: g('f-asset'),
       side: $('input[name="side"]:checked').value,
       entry: num(g('f-entry')), exit: num(g('f-exit')), qty: num(g('f-qty')),
-      sl: num(g('f-sl')), tp: num(g('f-tp')), fee: num(g('f-fee')) || 0,
+      sl: num(g('f-sl')), tp: num(g('f-tp')), fee: num(g('f-fee')) || 0, mult: num(g('f-mult')),
       setup: g('f-setup').trim(), tag: g('f-tag'), notes: g('f-notes').trim()
     };
   }
@@ -795,13 +802,13 @@ tr.detail td { background: var(--surface-2); }
     p.textContent = parts.join(' · ');
   }
   function openDrawer(t) {
-    state.editingId = t ? t.id : null; state.editingCreated = t ? t.createdAt : null;
+    state.editingId = t ? t.id : null; state.editingCreated = t ? t.createdAt : null; state.autoAsset = !t;
     $('#d-title').textContent = t ? 'Ubah trade' : 'Tambah trade';
     var set = function (id, v) { $('#' + id).value = v == null ? '' : v; };
     set('f-date', t ? t.date : todayStr()); set('f-symbol', t ? t.symbol : ''); set('f-asset', t ? t.asset : 'saham');
     $(t && t.side === 'short' ? '#side-short' : '#side-long').checked = true;
     set('f-entry', t && t.entry); set('f-exit', t && t.exit); set('f-qty', t && t.qty);
-    set('f-fee', t && t.fee ? t.fee : ''); set('f-sl', t && t.sl); set('f-tp', t && t.tp);
+    set('f-fee', t && t.fee ? t.fee : ''); set('f-mult', t && t.mult); set('f-sl', t && t.sl); set('f-tp', t && t.tp);
     set('f-setup', t && t.setup); set('f-tag', t ? t.tag : ''); set('f-notes', t && t.notes);
     $('#f-error').hidden = true;
     fillSetups(); syncAsset(); updatePreview();
@@ -818,12 +825,12 @@ tr.detail td { background: var(--surface-2); }
   }
   async function exportCsv() {
     if (!state.dl || !state.trades.length) return;
-    var head = ['tanggal', 'instrumen', 'aset', 'posisi', 'harga_masuk', 'harga_keluar', 'jumlah', 'stop_loss', 'target', 'biaya', 'pl', 'r', 'strategi', 'psikologi', 'catatan'];
+    var head = ['tanggal', 'instrumen', 'aset', 'posisi', 'harga_masuk', 'harga_keluar', 'jumlah', 'ukuran_kontrak', 'stop_loss', 'target', 'biaya', 'pl', 'r', 'strategi', 'psikologi', 'catatan'];
     var rows = state.trades.map(function (t) { return Object.assign({}, t, calc(t)); }).sort(cmpAsc).map(function (t) {
-      return [t.date, t.symbol, t.asset, t.side, t.entry, t.exit, t.qty, t.sl, t.tp, t.fee || 0,
+      return [t.date, t.symbol, t.asset, t.side, t.entry, t.exit, t.qty, t.mult, t.sl, t.tp, t.fee || 0,
         t.pnl == null ? '' : Math.round(t.pnl * 100) / 100, t.r == null ? '' : Math.round(t.r * 100) / 100, t.setup, t.tag, t.notes].map(csvCell).join(',');
     });
-    var data = '﻿' + head.join(',') + '\n' + rows.join('\n') + '\n';
+    var data = '\ufeff' + head.join(',') + '\n' + rows.join('\n') + '\n';
     try {
       await state.dl.save({ filename: 'jurnal-trading-' + todayStr() + '.csv', data: data });
       toast('CSV disimpan');
@@ -860,7 +867,16 @@ tr.detail td { background: var(--surface-2); }
   $('#set-cur').addEventListener('change', function (e) {
     state.settings = Object.assign({}, state.settings, { currency: e.target.value }); saveSettings();
   });
-  $('#f-asset').addEventListener('change', function () { syncAsset(); updatePreview(); });
+  $('#f-asset').addEventListener('change', function () { state.autoAsset = false; syncAsset(); updatePreview(); });
+  $('#f-symbol').addEventListener('input', function (e) {
+    if (!state.autoAsset) return;
+    var sy = e.target.value.trim().toUpperCase(), sel = $('#f-asset'), v = null;
+    if (/^XAU/.test(sy)) v = 'emas';
+    else if (/^XAG/.test(sy)) v = 'perak';
+    else if (/^(BTC|ETH|SOL|XRP|BNB)/.test(sy)) v = 'kripto';
+    else if (/^[A-Z]{6}$/.test(sy)) v = 'forex';
+    if (v && sel.value !== v) { sel.value = v; syncAsset(); updatePreview(); }
+  });
   $('#trade-form').addEventListener('input', updatePreview);
   $('#trade-form').addEventListener('submit', async function (e) {
     e.preventDefault();
